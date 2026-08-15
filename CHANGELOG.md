@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-08-16
+
+A hardening release aimed at the ceiling against **automated static deobfuscation**: it removes the fixed structural signatures such tools rely on and forces the control-flow dispatcher to require multi-variable analysis.
+
+### Added
+- **Dual-coupled control-flow state** — the switch dispatcher's state is split across two coupled locals (`state = enc ^ r`, `state2 = r` for a fresh per-transition `r`), recombined only at the dispatcher. A deflattener that tracks a single state variable — the standard shape — can no longer recover the switch index; the reconstruction must discover the pairing across both locals. Seed-independent, so it holds even if the seed fields are identified. Purely a reversible identity (`r` cancels), so behaviour is unchanged (1:1).
+- **Polymorphic injected-host shape** — every generated helper container (runtime seeds, string/constant decryptors, the string pool, forwarder-stub hosts) now emits with randomised class attributes instead of the fixed `static class` (`sealed + abstract`) shape. That fixed pair was a free structural fingerprint an automated deobfuscator keys on to locate obfuscator artifacts; because the runtime-seed host is the pivot the whole seed-based chain (opaque predicates, per-method key masks, control-flow dispatcher) hangs off, removing that certain match forces an attacker onto a lossy heuristic (false positives on ordinary user static classes) or the expensive interprocedural recovery of the degree-2 seed relation.
+- **Randomised seed field width** — the runtime-seed fields use a per-field-random integer width. They load and arithmetise identically on the IL stack (zero runtime cost, relation unchanged), but no longer match a fixed field-type signature.
+- **Diversified call-proxy hosts** — forwarder stubs scatter across a small pool of differently-shaped hosts rather than one, so a proxy no longer maps to a single fingerprintable container.
+
+### Added — Scenario A hardening (raises the static-deobfuscation ceiling)
+- **Stealth host placement** — injected helper containers (runtime seeds, decryptors, string pool, forwarder stubs) no longer share the tell-tale shape *empty namespace + `Object` base + only-static-members + no instance constructor* that an automated deobfuscator keys on to locate obfuscator artifacts. Each host now reads like an ordinary user class: a real (scattered) namespace, a never-called decoy instance constructor, and decoy instance fields. Renamed top-level user types are scattered across real namespaces instead of collapsing into the single empty-namespace node (itself a "this is obfuscated" signal). Behaviour-neutral: the members the helpers use stay static, the decoy ctor is never invoked.
+- **Decryptor key chaining** — each per-method key mask now folds in a call that returns 0 only under the runtime seed relation, so the mask's initialiser is no longer the pure arithmetic a static tool can constant-fold to recover the key. Folding a keyed string/constant site now requires emulating the call and the seed relation together, dissolving the per-site isolation that let a tool decrypt each literal independently. `key ^ 0 == key`, so 1:1.
+- **Wide-BCL cipher lens** — the string/constant decryptors thread their running value through universal, deterministic **identity** BCL calls (`Convert.ToInt32/ToInt64`, `Math.Max/Min` of a value with itself) that a generic IL emulator does not model. An emulator that stubs unknown calls to a default silently produces garbage and must grow toward a full CLR to keep up. The calls are exact identities, so the value is unchanged (1:1) and resolve in the target's own corlib on every runtime.
+- **Metadata-bound seeds** — the runtime seeds are mixed with `typeof(host).MetadataToken`. The degree-2 relation is recomputed from the metadata-derived seeds in the same static constructor, so it still holds exactly at runtime (1:1), but a tool that rewrites the assembly shifts the tokens and an emulator that ignores `ldtoken`/reflection computes the wrong seeds — every opaque expression becomes non-zero and deflattening breaks.
+- **Data-dependent dispatcher state** — the control-flow dispatcher's stored state now mixes in a live method parameter through an always-zero MBA term over the seed relation, so static state resolution needs data-flow over user code, not a constant fold. The term is 0 for every parameter value, so behaviour is unchanged.
+
+### Notes
+- All changes are behaviour-identical (1:1) and verified against the project's internal correctness test suite (Safe and Max modes) plus a self-obfuscation run. Injected-host variants keep every member static, so the type is never instantiated (`Abstract` needs no ctor; `Sealed`-only mirrors the compiler's own `<PrivateImplementationDetails>`); stealth placement adds only a never-called decoy constructor.
+
 ## [1.2.0] - 2026-08-12
 ### Added
 - **Safe / Max mode selector** (GUI dropdown + `--max` CLI flag). The mode governs only *how much a pass skips* — it never changes which passes run, so all feature checkboxes stay independent.
@@ -12,9 +32,6 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Self-obfuscated release binaries rebuilt with the expanded protection pipeline.
-
-### Verified
-- 50/50 obfuscation-integrity suite passes across reseeded builds in both Safe and Max modes; self-obfuscated obfuscator launches cleanly in both modes.
 
 ## [1.1.0] - 2026-08-12
 ### Added
