@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-08-16
+
+A hardening release aimed at a cheaper, more realistic attacker than the previous one: the **concrete/interpretive evaluator** that runs the seed initializer through a simple IL interpreter instead of solving the seed relation algebraically. Where 1.3.0 raised the ceiling for a symbolic solver, 1.4.0 closes the gap for an evaluator that just executes the code.
+
+### Added
+- **Self-referential dispatcher state** — the control-flow dispatcher now folds an always-zero expression over its own *live, executed* recombined state into the switch input before decoding. Resolving the switch index therefore requires knowing which state actually ran, while recovering that state is itself hidden behind the seed-relation opaque term — a circular dependency that stops the linear "fold the predicate, then de-flatten" pipeline any evaluator relies on. The term is zero for every value, so behaviour is unchanged (1:1).
+- **Broadened identity-call surface** — the string/constant decryptor lens now draws 1–3 operations at random per site from a much larger pool of universal, deterministic **identity** calls (`Convert.ToInt32/ToInt64`, `Math.Max/Min` against a value and against the type bounds, integer widen/narrow round-trips, and a bit-exact round-trip through the floating-point domain) instead of a fixed handful. A generic emulator that stubs unmodeled calls to a default now corrupts the value across many more shapes and must model far more of the runtime to keep up. Every call is an exact identity, so the decrypted value is unchanged (1:1) and every method resolves in the target's own corlib on all runtimes.
+- **Diversified always-zero skeletons** — opaque expressions and per-method key masks now select from several structurally-independent zero identities (carry, union, xor-swap, and/or-sum, symmetric-difference, shift-sum) and fold in two independent skeletons per site, rather than varying only the coefficients of one template. A pattern matcher keyed on the *shape* of the identity no longer generalises from one recognised form.
+- **Distributed seed derivation** — the runtime-seed relation's constants are split across several independent injected host types (a fragment parked in a static field on a separate host, reconstructed in the seed initializer) instead of living in one static constructor. Recovering the relation now means tracing multiple types and their initialization order — more so when hosts are disguised as ordinary user types. The reconstructed values are bit-for-bit identical, so the relation and behaviour are unchanged.
+- **Higher-degree and combined relations** — opaque expressions can now be raised to degree-3 (a zero residue multiplied by two seed loads), and per-method key masks combine two independent seed relations by XOR. Folding a masked site can require recovering more than one relation and reasoning over a seed product, not just a linear combination.
+
+### Notes
+- All changes are behaviour-identical (1:1) and verified against the project's internal correctness test suite (Safe and Max modes) plus a self-obfuscation run. Every added construct contributes exactly zero / is an exact identity, so the output computes the same result as the input.
+
 ## [1.3.0] - 2026-08-16
 
 A hardening release aimed at the ceiling against **automated static deobfuscation**: it removes the fixed structural signatures such tools rely on and forces the control-flow dispatcher to require multi-variable analysis.
